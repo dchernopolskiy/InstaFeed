@@ -23,22 +23,29 @@ class ViewController: UIViewController {
     @IBOutlet weak var colorSlider: UISlider!
     @IBOutlet weak var collectionView: UICollectionView!
     
-    var allPhotos: [PHAsset] = []
+    var allPhotos: PHFetchResult<PHAsset>!
     var filteredPhotos: [(asset: PHAsset, similarity: CGFloat)] = []
     var debounceTimer: Timer?
-    var lastFilteredPhotos: [(asset: PHAsset, similarity: CGFloat)] = []
     
-    let percentileThreshold: Double = 0.3 //check how similar
-
+    let percentileThreshold: Double = 0.3
+    let batchSize = 100 // Number of photos to process in each batch
     
-    // Add a cache for average colors
     var averageColorCache: [String: UIColor] = [:]
+    var processingQueue = DispatchQueue(label: "com.yourapp.photoProcessing", qos: .userInitiated, attributes: .concurrent)
+    var isProcessing = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupPhotoLibraryAccess()
         setupColorSlider()
         setupCollectionView()
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        let assets = filteredPhotos.map { $0.asset }
+        let fullScreenVC = FullScreenPhotoViewController(orderedAssets: assets, initialIndex: indexPath.item)
+        fullScreenVC.modalPresentationStyle = .fullScreen
+        present(fullScreenVC, animated: true, completion: nil)
     }
     
     func setupPhotoLibraryAccess() {
@@ -72,7 +79,7 @@ class ViewController: UIViewController {
             print("Error: colorSlider is nil")
             return
         }
-
+        
         // Create a gradient layer for the slider
         let gradientLayer = CAGradientLayer()
         gradientLayer.frame = colorSlider.bounds
@@ -87,7 +94,7 @@ class ViewController: UIViewController {
         ]
         gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
         gradientLayer.endPoint = CGPoint(x: 1.0, y: 0.5)
-
+        
         // Create an image from the gradient layer
         UIGraphicsBeginImageContextWithOptions(gradientLayer.bounds.size, false, 0)
         if let context = UIGraphicsGetCurrentContext() {
@@ -95,11 +102,11 @@ class ViewController: UIViewController {
         }
         let gradientImage = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-
+        
         // Set the gradient image as the slider's background
         colorSlider.setMinimumTrackImage(gradientImage, for: .normal)
         colorSlider.setMaximumTrackImage(gradientImage, for: .normal)
-
+        
         // Configure slider
         colorSlider.minimumValue = 0.0
         colorSlider.maximumValue = 1.0
@@ -118,24 +125,23 @@ class ViewController: UIViewController {
             self?.filterPhotosByColor(selectedColor)
         }
     }
- 
+    
     func getSelectedColor() -> UIColor {
         return UIColor(hue: CGFloat(colorSlider.value), saturation: 1.0, brightness: 1.0, alpha: 1.0)
     }
-
+    
     func fetchPhotos() {
         let fetchOptions = PHFetchOptions()
-        let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-        allPhotos = fetchResult.objects(at: IndexSet(integersIn: 0..<fetchResult.count))
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
         
-        if allPhotos.isEmpty {
+        if allPhotos.count == 0 {
             print("No photos found in the library")
-            // Handle the case where there are no photos
         } else {
             filterPhotosByColor(getSelectedColor())
         }
     }
-
+    
     func colorSimilarity(_ color1: UIColor, to color2: UIColor) -> CGFloat {
         var hue1: CGFloat = 0, saturation1: CGFloat = 0, brightness1: CGFloat = 0, alpha1: CGFloat = 0
         var hue2: CGFloat = 0, saturation2: CGFloat = 0, brightness2: CGFloat = 0, alpha2: CGFloat = 0
@@ -158,43 +164,59 @@ class ViewController: UIViewController {
     }
     
     func filterPhotosByColor(_ color: UIColor) {
+        guard !isProcessing else { return }
+        isProcessing = true
+        
         print("Filtering photos for color: \(color)")
         
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        filteredPhotos.removeAll()
+        
+        let totalPhotos = allPhotos.count
+        var processedPhotos = 0
+        
+        processingQueue.async { [weak self] in
             guard let self = self else { return }
             
-            let allSimilarities = self.allPhotos.compactMap { asset -> (asset: PHAsset, similarity: CGFloat)? in
-                guard let averageColor = self.averageColor(for: asset) else { return nil }
-                let similarity = self.colorSimilarity(averageColor, to: color)
-                return (asset: asset, similarity: similarity)
+            var tempFilteredPhotos: [(asset: PHAsset, similarity: CGFloat)] = []
+            
+            for i in 0..<totalPhotos {
+                autoreleasepool {
+                    let asset = self.allPhotos.object(at: i)
+                    if let averageColor = self.averageColor(for: asset) {
+                        let similarity = self.colorSimilarity(averageColor, to: color)
+                        tempFilteredPhotos.append((asset: asset, similarity: similarity))
+                    }
+                    
+                    processedPhotos += 1
+                    
+                    if processedPhotos % self.batchSize == 0 || processedPhotos == totalPhotos {
+                        // Sort and update filtered photos
+                        tempFilteredPhotos.sort { $0.similarity < $1.similarity }
+                        let thresholdIndex = min(Int(Double(tempFilteredPhotos.count) * self.percentileThreshold), tempFilteredPhotos.count - 1)
+                        let newFilteredPhotos = Array(tempFilteredPhotos.prefix(thresholdIndex + 1))
+                        
+                        DispatchQueue.main.async {
+                            self.updateCollectionView(with: newFilteredPhotos)
+                        }
+                        
+                        // Clear temp array to free up memory
+                        tempFilteredPhotos.removeAll(keepingCapacity: true)
+                    }
+                }
             }
             
-            // Sort by similarity (lower is more similar)
-            let sortedSimilarities = allSimilarities.sorted { $0.similarity < $1.similarity }
-            
-            // Take the top percentage of photos
-            let thresholdIndex = min(Int(Double(sortedSimilarities.count) * self.percentileThreshold), sortedSimilarities.count - 1)
-            let newFilteredPhotos = Array(sortedSimilarities.prefix(thresholdIndex + 1))
-            
-            print("Number of all photos: \(self.allPhotos.count)")
-            print("Number of filtered photos: \(newFilteredPhotos.count)")
-            
-            if let mostSimilar = newFilteredPhotos.first, let leastSimilar = newFilteredPhotos.last {
-                print("Most similar photo similarity: \(mostSimilar.similarity)")
-                print("Least similar photo similarity: \(leastSimilar.similarity)")
-            }
-
             DispatchQueue.main.async {
-                self.updateCollectionView(with: newFilteredPhotos)
+                self.isProcessing = false
             }
         }
     }
-
+    
+    
     func averageColor(for asset: PHAsset) -> UIColor? {
         if let cachedColor = averageColorCache[asset.localIdentifier] {
             return cachedColor
         }
-
+        
         let manager = PHImageManager.default()
         let option = PHImageRequestOptions()
         option.isSynchronous = true
@@ -218,13 +240,20 @@ class ViewController: UIViewController {
     }
     
     func updateCollectionView(with newFilteredPhotos: [(asset: PHAsset, similarity: CGFloat)]) {
-        self.filteredPhotos = newFilteredPhotos
+        self.filteredPhotos.append(contentsOf: newFilteredPhotos)
+        self.filteredPhotos.sort { $0.similarity < $1.similarity }
+        
+        // Keep only the top percentile
+        let thresholdIndex = min(Int(Double(self.filteredPhotos.count) * self.percentileThreshold), self.filteredPhotos.count - 1)
+        self.filteredPhotos = Array(self.filteredPhotos.prefix(thresholdIndex + 1))
+        
         self.collectionView.reloadData()
         
-        if !self.filteredPhotos.isEmpty {
-            self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: true)
+        if !self.filteredPhotos.isEmpty && self.collectionView.contentOffset.y == 0 {
+            self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
         }
     }
+    
 }
 
 extension ViewController: UICollectionViewDataSource, UICollectionViewDelegate {
