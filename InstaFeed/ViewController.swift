@@ -18,27 +18,143 @@ extension UIImage {
     }
 }
 
-class ViewController: UIViewController {
+class ViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     
     @IBOutlet weak var colorSlider: UISlider!
     @IBOutlet weak var collectionView: UICollectionView!
+    
+    lazy var progressView: UIProgressView = {
+        let progress = UIProgressView(progressViewStyle: .default)
+        progress.translatesAutoresizingMaskIntoConstraints = false
+        return progress
+    }()
+    
+    lazy var progressLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .center
+        return label
+    }()
+    
+    var totalProgress: Float = 0
+    var totalSteps: Int = 0
+    var allPhotoColors: [(asset: PHAsset, color: UIColor)] = []
+    
+    lazy var overlay: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
     
     var allPhotos: PHFetchResult<PHAsset>!
     var filteredPhotos: [(asset: PHAsset, similarity: CGFloat)] = []
     var debounceTimer: Timer?
     
-    let percentileThreshold: Double = 0.3
+    let percentileThreshold: Double = 0.8
     let batchSize = 100 // Number of photos to process in each batch
     
     var averageColorCache: [String: UIColor] = [:]
     var processingQueue = DispatchQueue(label: "com.yourapp.photoProcessing", qos: .userInitiated, attributes: .concurrent)
     var isProcessing = false
+    var processedAssets: Set<String> = []
+    
+    
+    let userDefaults = UserDefaults.standard
+    let cacheKey = "PhotoAnalysisCache"
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupUI()
         setupPhotoLibraryAccess()
+        loadCachedResults()
+    }
+    
+    func setupUI() {
         setupColorSlider()
         setupCollectionView()
+        
+        view.addSubview(overlay)
+        view.addSubview(progressView)
+        view.addSubview(progressLabel)
+        
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            progressView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            progressView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            progressView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            progressLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 10),
+            progressLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+        
+        // Initially hide the overlay and progress elements
+        overlay.isHidden = true
+        progressView.isHidden = true
+        progressLabel.isHidden = true
+    }
+    
+    func loadCachedResults() {
+        if let cachedData = userDefaults.data(forKey: cacheKey),
+           let cachedResults = try? JSONDecoder().decode([String: [String: CGFloat]].self, from: cachedData) {
+            for (identifier, colorData) in cachedResults {
+                if let red = colorData["red"],
+                   let green = colorData["green"],
+                   let blue = colorData["blue"] {
+                    averageColorCache[identifier] = UIColor(red: red, green: green, blue: blue, alpha: 1.0)
+                }
+            }
+        }
+    }
+    
+    func saveCachedResults() {
+        var cacheData: [String: [String: CGFloat]] = [:]
+        for (identifier, color) in averageColorCache {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            cacheData[identifier] = ["red": red, "green": green, "blue": blue]
+        }
+        
+        if let encodedData = try? JSONEncoder().encode(cacheData) {
+            userDefaults.set(encodedData, forKey: cacheKey)
+        }
+    }
+    
+    func setupPhotoLibraryAccess() {
+        PHPhotoLibrary.requestAuthorization { [weak self] status in
+            guard let self = self else { return }
+            if status == .authorized {
+                DispatchQueue.main.async {
+                    self.fetchPhotos()
+                }
+            } else {
+                print("Photo library access denied")
+                DispatchQueue.main.async {
+                    self.showAccessDeniedAlert()
+                }
+            }
+        }
+    }
+    
+    func showAccessDeniedAlert() {
+        let alert = UIAlertController(title: "Access Denied", message: "This app requires access to your photo library to function. Please grant access in Settings.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(settingsURL)
+            }
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    func showNoPhotosAlert() {
+        let alert = UIAlertController(title: "No Photos", message: "No photos were found in your library.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -46,19 +162,6 @@ class ViewController: UIViewController {
         let fullScreenVC = FullScreenPhotoViewController(orderedAssets: assets, initialIndex: indexPath.item)
         fullScreenVC.modalPresentationStyle = .fullScreen
         present(fullScreenVC, animated: true, completion: nil)
-    }
-    
-    func setupPhotoLibraryAccess() {
-        PHPhotoLibrary.requestAuthorization { status in
-            if status == .authorized {
-                DispatchQueue.main.async {
-                    self.fetchPhotos()
-                }
-            } else {
-                print("Photo library access denied")
-                // Handle the case where the user denies access - !!TODO!! add a pop up
-            }
-        }
     }
     
     func setupCollectionView() {
@@ -127,7 +230,7 @@ class ViewController: UIViewController {
     }
     
     func getSelectedColor() -> UIColor {
-        return UIColor(hue: CGFloat(colorSlider.value), saturation: 1.0, brightness: 1.0, alpha: 1.0)
+        return UIColor(hue: CGFloat(colorSlider.value), saturation: 1.0, brightness: 1.0, alpha:  1.0)
     }
     
     func fetchPhotos() {
@@ -137,8 +240,9 @@ class ViewController: UIViewController {
         
         if allPhotos.count == 0 {
             print("No photos found in the library")
+            showNoPhotosAlert()
         } else {
-            filterPhotosByColor(getSelectedColor())
+            analyzeLibrary()
         }
     }
     
@@ -163,55 +267,6 @@ class ViewController: UIViewController {
         return similarity
     }
     
-    func filterPhotosByColor(_ color: UIColor) {
-        guard !isProcessing else { return }
-        isProcessing = true
-        
-        print("Filtering photos for color: \(color)")
-        
-        filteredPhotos.removeAll()
-        
-        let totalPhotos = allPhotos.count
-        var processedPhotos = 0
-        
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            var tempFilteredPhotos: [(asset: PHAsset, similarity: CGFloat)] = []
-            
-            for i in 0..<totalPhotos {
-                autoreleasepool {
-                    let asset = self.allPhotos.object(at: i)
-                    if let averageColor = self.averageColor(for: asset) {
-                        let similarity = self.colorSimilarity(averageColor, to: color)
-                        tempFilteredPhotos.append((asset: asset, similarity: similarity))
-                    }
-                    
-                    processedPhotos += 1
-                    
-                    if processedPhotos % self.batchSize == 0 || processedPhotos == totalPhotos {
-                        // Sort and update filtered photos
-                        tempFilteredPhotos.sort { $0.similarity < $1.similarity }
-                        let thresholdIndex = min(Int(Double(tempFilteredPhotos.count) * self.percentileThreshold), tempFilteredPhotos.count - 1)
-                        let newFilteredPhotos = Array(tempFilteredPhotos.prefix(thresholdIndex + 1))
-                        
-                        DispatchQueue.main.async {
-                            self.updateCollectionView(with: newFilteredPhotos)
-                        }
-                        
-                        // Clear temp array to free up memory
-                        tempFilteredPhotos.removeAll(keepingCapacity: true)
-                    }
-                }
-            }
-            
-            DispatchQueue.main.async {
-                self.isProcessing = false
-            }
-        }
-    }
-    
-    
     func averageColor(for asset: PHAsset) -> UIColor? {
         if let cachedColor = averageColorCache[asset.localIdentifier] {
             return cachedColor
@@ -220,13 +275,13 @@ class ViewController: UIViewController {
         let manager = PHImageManager.default()
         let option = PHImageRequestOptions()
         option.isSynchronous = true
-        option.deliveryMode = .highQualityFormat
-        option.resizeMode = .exact
-        option.isNetworkAccessAllowed = true
+        option.deliveryMode = .fastFormat
+        option.resizeMode = .fast
+        option.isNetworkAccessAllowed = false
         
         var averageColor: UIColor?
         
-        manager.requestImage(for: asset, targetSize: CGSize(width: 100, height: 100), contentMode: .aspectFit, options: option) { [weak self] image, info in
+        manager.requestImage(for: asset, targetSize: CGSize(width: 50, height: 50), contentMode: .aspectFit, options: option) { [weak self] image, info in
             if let error = info?[PHImageErrorKey] as? Error {
                 print("Image request failed with error: \(error)")
             }
@@ -239,8 +294,96 @@ class ViewController: UIViewController {
         return averageColor
     }
     
+    func analyzeLibrary() {
+        guard !isProcessing else { return }
+        isProcessing = true
+        
+        // Show overlay and progress elements
+        DispatchQueue.main.async {
+            self.overlay.isHidden = false
+            self.progressView.isHidden = false
+            self.progressLabel.isHidden = false
+            self.progressView.progress = 0
+            self.progressLabel.text = "Analyzing photos: 0%"
+        }
+        
+        let totalPhotos = allPhotos.count
+        var processedPhotos = 0
+        
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.allPhotoColors.removeAll()
+            
+            for i in 0..<totalPhotos {
+                autoreleasepool {
+                    let asset = self.allPhotos.object(at: i)
+                    
+                    if let averageColor = self.averageColor(for: asset) {
+                        self.allPhotoColors.append((asset: asset, color: averageColor))
+                    }
+                    
+                    processedPhotos += 1
+                    let progress = Float(processedPhotos) / Float(totalPhotos)
+                    DispatchQueue.main.async {
+                        self.progressView.progress = progress
+                        self.progressLabel.text = "Analyzing photos: \(Int(progress * 100))%"
+                    }
+                }
+            }
+            
+            DispatchQueue.main.async {
+                self.isProcessing = false
+                self.saveCachedResults()
+                self.overlay.isHidden = true
+                self.progressView.isHidden = true
+                self.progressLabel.isHidden = true
+                self.filterPhotosByColor(self.getSelectedColor())
+            }
+        }
+    }
+    
+    func filterPhotosByColor(_ color: UIColor) {
+        guard !isProcessing else { return }
+        isProcessing = true
+        
+        print("Filtering photos for color: \(color)")
+        
+        filteredPhotos.removeAll()
+        
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            let filteredAndSorted = self.allPhotoColors.map { (asset: $0.asset, similarity: self.colorSimilarity($0.color, to: color)) }
+                .sorted { $0.similarity < $1.similarity }
+            
+            let thresholdIndex = min(Int(Double(filteredAndSorted.count) * self.percentileThreshold), filteredAndSorted.count - 1)
+            let newFilteredPhotos = Array(filteredAndSorted.prefix(thresholdIndex + 1))
+            
+            DispatchQueue.main.async {
+                self.updateCollectionView(with: newFilteredPhotos)
+                self.isProcessing = false
+            }
+        }
+    }
+    
+    func updateProgress(step: Int) {
+        let progress = Float(step) / Float(totalSteps)
+        DispatchQueue.main.async {
+            self.progressView.progress = progress
+            self.progressLabel.text = "Processing: \(Int(progress * 100))%"
+        }
+    }
+    
     func updateCollectionView(with newFilteredPhotos: [(asset: PHAsset, similarity: CGFloat)]) {
+        // Remove any duplicates that might already be in filteredPhotos
+        let newAssetIDs = Set(newFilteredPhotos.map { $0.asset.localIdentifier })
+        self.filteredPhotos = self.filteredPhotos.filter { !newAssetIDs.contains($0.asset.localIdentifier) }
+        
+        // Append new filtered photos
         self.filteredPhotos.append(contentsOf: newFilteredPhotos)
+        
+        // Sort all filtered photos
         self.filteredPhotos.sort { $0.similarity < $1.similarity }
         
         // Keep only the top percentile
@@ -253,10 +396,9 @@ class ViewController: UIViewController {
             self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
         }
     }
-    
 }
 
-extension ViewController: UICollectionViewDataSource, UICollectionViewDelegate {
+extension ViewController {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         return filteredPhotos.count
     }
@@ -276,7 +418,7 @@ extension ViewController: UICollectionViewDataSource, UICollectionViewDelegate {
             DispatchQueue.main.async {
                 cell.imageView.image = image
                 
-                // Optionally, display the similarity score
+                // Optional display of the similarity score
                 cell.similarityLabel.text = String(format: "%.2f", assetInfo.similarity)
             }
         }
