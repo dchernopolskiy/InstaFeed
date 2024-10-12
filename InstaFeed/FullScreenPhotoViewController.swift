@@ -29,18 +29,33 @@ class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDe
     
     private func setupGestureRecognizers() {
         // Set this view controller as the delegate for existing gesture recognizers
-        for gestureRecognizer in gestureRecognizers {
+        for gestureRecognizer in gestureRecognizers ?? [] {
             gestureRecognizer.delegate = self
         }
     }
     
+    func goToNextPhoto() {
+        if let currentVC = viewControllers?.first as? SinglePhotoViewController,
+           let nextVC = pageViewController(self, viewControllerAfter: currentVC) {
+            setViewControllers([nextVC], direction: .forward, animated: true, completion: nil)
+        }
+    }
+    
+    func goToPreviousPhoto() {
+        if let currentVC = viewControllers?.first as? SinglePhotoViewController,
+           let previousVC = pageViewController(self, viewControllerBefore: currentVC) {
+            setViewControllers([previousVC], direction: .reverse, animated: true, completion: nil)
+        }
+    }
+
     private func photoViewController(at index: Int) -> UIViewController? {
         guard index >= 0 && index < orderedAssets.count else { return nil }
         let vc = SinglePhotoViewController(asset: orderedAssets[index])
         vc.index = index
+        vc.fullScreenParent = self  // Set the parent view controller
         return vc
     }
-    
+
     // MARK: - UIGestureRecognizerDelegate
     
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -70,16 +85,36 @@ extension FullScreenPhotoViewController: UIPageViewControllerDataSource, UIPageV
 class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     private let imageView: UIImageView
     private let asset: PHAsset
-    private let closeButton: UIButton
-    private let shareButton: UIButton
     private let activityIndicator: UIActivityIndicatorView
     var index: Int = 0
     
+    weak var fullScreenParent: FullScreenPhotoViewController?
+
+    lazy var closeButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        button.tintColor = .white
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        button.layer.cornerRadius = 20
+        button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+        
+    lazy var shareButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
+        button.tintColor = .white
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        button.layer.cornerRadius = 20
+        button.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     init(asset: PHAsset) {
         self.asset = asset
         self.imageView = UIImageView()
-        self.closeButton = UIButton(type: .system)
-        self.shareButton = UIButton(type: .system)
         self.activityIndicator = UIActivityIndicatorView(style: .large)
         super.init(nibName: nil, bundle: nil)
     }
@@ -99,23 +134,44 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
 
     private func setupGestureRecognizers() {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
+
+        let leftSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
+        leftSwipe.direction = .left
+        view.addGestureRecognizer(leftSwipe)
+
+        let rightSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
+        rightSwipe.direction = .right
+        view.addGestureRecognizer(rightSwipe)
+
+        let upSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleDismissSwipe(_:)))
+        upSwipe.direction = .up
+        view.addGestureRecognizer(upSwipe)
+
+        let downSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleDismissSwipe(_:)))
+        downSwipe.direction = .down
+        view.addGestureRecognizer(downSwipe)
+    }
+
+    @objc private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+        guard let parent = fullScreenParent else { return }
+        if gesture.direction == .left {
+            parent.goToNextPhoto()
+        } else if gesture.direction == .right {
+            parent.goToPreviousPhoto()
+        }
+    }
+
+    @objc private func handleDismissSwipe(_ gesture: UISwipeGestureRecognizer) {
+        dismiss(animated: true, completion: nil)
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        // Toggle visibility of buttons
         let isHidden = !closeButton.isHidden
         closeButton.isHidden = isHidden
         shareButton.isHidden = isHidden
     }
 
-    // MARK: - UIGestureRecognizerDelegate
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
-    }
-    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadImage()
@@ -144,27 +200,21 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     
     private func setupCloseButton() {
         view.addSubview(closeButton)
-        closeButton.setTitle("X", for: .normal)
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 44)
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            closeButton.widthAnchor.constraint(equalToConstant: 40),
+            closeButton.heightAnchor.constraint(equalToConstant: 40)
         ])
     }
     
     private func setupShareButton() {
         view.addSubview(shareButton)
-        shareButton.setTitle("^", for: .normal)
-        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
-        shareButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            shareButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            shareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            shareButton.widthAnchor.constraint(equalToConstant: 44),
-            shareButton.heightAnchor.constraint(equalToConstant: 44)
+            shareButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            shareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            shareButton.widthAnchor.constraint(equalToConstant: 40),
+            shareButton.heightAnchor.constraint(equalToConstant: 40)
         ])
     }
     
@@ -181,7 +231,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
             }
         }
         
-        // First, load a lower quality image quickly
+        // Load a lower quality image quickly
         manager.requestImage(for: asset, targetSize: CGSize(width: 300, height: 300), contentMode: .aspectFit, options: option) { [weak self] (image, _) in
             DispatchQueue.main.async {
                 self?.imageView.image = image
@@ -206,7 +256,10 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     }
     
     @objc private func shareTapped() {
-        guard let image = imageView.image else { return }
+        guard let image = imageView.image else {
+            showAlert(title: "Error", message: "No image available to share.")
+            return
+        }
         
         let activityViewController = UIActivityViewController(activityItems: [image], applicationActivities: nil)
         
@@ -216,6 +269,24 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
             popoverController.sourceRect = shareButton.bounds
         }
         
+        // Handle potential errors
+        activityViewController.completionWithItemsHandler = { (activityType, completed, returnedItems, error) in
+            if let error = error {
+                print("Sharing failed with error: \(error.localizedDescription)")
+                self.showAlert(title: "Sharing Failed", message: "There was an error while trying to share the image.")
+            } else if completed {
+                print("Sharing completed successfully.")
+            } else {
+                print("Sharing cancelled by user.")
+            }
+        }
+        
         present(activityViewController, animated: true, completion: nil)
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+        present(alert, animated: true, completion: nil)
     }
 }
