@@ -28,7 +28,6 @@ class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDe
     }
     
     private func setupGestureRecognizers() {
-        // Set this view controller as the delegate for existing gesture recognizers
         for gestureRecognizer in gestureRecognizers ?? [] {
             gestureRecognizer.delegate = self
         }
@@ -52,7 +51,7 @@ class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDe
         guard index >= 0 && index < orderedAssets.count else { return nil }
         let vc = SinglePhotoViewController(asset: orderedAssets[index])
         vc.index = index
-        vc.fullScreenParent = self  // Set the parent view controller
+        vc.fullScreenParent = self
         return vc
     }
 
@@ -94,10 +93,13 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         button.tintColor = .white
-        button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
-        button.layer.cornerRadius = 20
+        button.backgroundColor = .clear
         button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.shadowOpacity = 0.3
+        button.layer.shadowRadius = 2
         return button
     }()
         
@@ -105,10 +107,13 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
         button.tintColor = .white
-        button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
-        button.layer.cornerRadius = 20
+        button.backgroundColor = .clear
         button.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.shadowOpacity = 0.3
+        button.layer.shadowRadius = 2
         return button
     }()
 
@@ -203,8 +208,8 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            closeButton.widthAnchor.constraint(equalToConstant: 40),
-            closeButton.heightAnchor.constraint(equalToConstant: 40)
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
     
@@ -213,8 +218,8 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             shareButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
             shareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            shareButton.widthAnchor.constraint(equalToConstant: 40),
-            shareButton.heightAnchor.constraint(equalToConstant: 40)
+            shareButton.widthAnchor.constraint(equalToConstant: 44),
+            shareButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
     
@@ -238,7 +243,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
             }
         }
         
-        // Then, load the full quality image
+        // Load the full quality image
         manager.requestImage(for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: option) { [weak self] (image, info) in
             DispatchQueue.main.async {
                 self?.activityIndicator.stopAnimating()

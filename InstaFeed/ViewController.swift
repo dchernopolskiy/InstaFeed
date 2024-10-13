@@ -139,8 +139,10 @@ class KMeans {
 // MARK: - ViewController
 class ViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     
-    @IBOutlet weak var colorSlider: UISlider!
     @IBOutlet weak var collectionView: UICollectionView!
+    @IBOutlet weak var colorSlider: UISlider!
+    @IBOutlet weak var sortingButton: UIButton!
+    @IBOutlet weak var folderButton: UIButton!
     
     lazy var progressView: UIProgressView = {
         let progress = UIProgressView(progressViewStyle: .default)
@@ -190,36 +192,18 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
 
     var currentSortingMethod: SortingMethod = .color
-
-    // MARK: -  Implementation of sorting by shade or color
-    lazy var sortingButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: "circle.hexagonpath.fill"), for: .normal) // Icon for color sorting
-        button.tintColor = .systemBlue
-        button.addTarget(self, action: #selector(sortingButtonTapped), for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    lazy var sortingMenu: UIAlertController = {
-        let alert = UIAlertController(title: "Sorting Method", message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Color", style: .default) { [weak self] _ in
-            self?.changeSortingMethod(to: .color)
-        })
-        alert.addAction(UIAlertAction(title: "Shade", style: .default) { [weak self] _ in
-            self?.changeSortingMethod(to: .shade)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        return alert
-    }()
+    
+    var selectedCollection: PHAssetCollection?
     
     // MARK: - Lifecycle Methods
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupUI()
+        setupCollectionView()
+        setupColorSlider()
         setupPhotoLibraryAccess()
         loadCachedResults()
     }
+    
     
     // MARK: - Setup Methods
     func setupUI() {
@@ -230,6 +214,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         view.addSubview(progressView)
         view.addSubview(progressLabel)
         view.addSubview(sortingButton)
+        view.addSubview(folderButton)
         view.addSubview(colorSlider)
         
         NSLayoutConstraint.activate([
@@ -245,25 +230,27 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
             progressLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 10),
             progressLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             
+            sortingButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             sortingButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            sortingButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            sortingButton.widthAnchor.constraint(equalToConstant: 80),
-            sortingButton.heightAnchor.constraint(equalToConstant: 44),
-            
-            colorSlider.leadingAnchor.constraint(equalTo: sortingButton.trailingAnchor, constant: 10),
-            colorSlider.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            colorSlider.centerYAnchor.constraint(equalTo: sortingButton.centerYAnchor),
-            
-            sortingButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            sortingButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
             sortingButton.widthAnchor.constraint(equalToConstant: 44),
             sortingButton.heightAnchor.constraint(equalToConstant: 44),
             
-            colorSlider.leadingAnchor.constraint(equalTo: sortingButton.trailingAnchor, constant: 10),
+            folderButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            folderButton.leadingAnchor.constraint(equalTo: sortingButton.trailingAnchor, constant: 20),
+            folderButton.widthAnchor.constraint(equalToConstant: 44),
+            folderButton.heightAnchor.constraint(equalToConstant: 44),
+            
+            colorSlider.topAnchor.constraint(equalTo: sortingButton.bottomAnchor, constant: 20),
+            colorSlider.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             colorSlider.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            colorSlider.centerYAnchor.constraint(equalTo: sortingButton.centerYAnchor)
+            colorSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            collectionView.topAnchor.constraint(equalTo: colorSlider.bottomAnchor, constant: 20),
+            collectionView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
-
+        
         // Initially hide the overlay and progress elements
         overlay.isHidden = true
         progressView.isHidden = true
@@ -274,13 +261,23 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         collectionView.dataSource = self
         collectionView.delegate = self
         
-        collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: "PhotoCell")
+        let layout = UICollectionViewCompositionalLayout { _, _ in
+            let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1/3),
+                                                  heightDimension: .fractionalWidth(1/3))
+            let item = NSCollectionLayoutItem(layoutSize: itemSize)
+            item.contentInsets = NSDirectionalEdgeInsets(top: 1, leading: 1, bottom: 1, trailing: 1)
+            
+            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0),
+                                                   heightDimension: .fractionalWidth(1/3))
+            let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+            
+            let section = NSCollectionLayoutSection(group: group)
+            return section
+        }
         
-        let layout = UICollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 100, height: 100)
-        layout.minimumInteritemSpacing = 10
-        layout.minimumLineSpacing = 10
         collectionView.collectionViewLayout = layout
+        collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: "PhotoCell")
+
     }
     
     func setupColorSlider() {
@@ -306,13 +303,30 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         }
     }
     
+    // MARK: - Photo Fetching Methods
+    func fetchPhotos() {
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        
+        if let selectedCollection = selectedCollection {
+            allPhotos = PHAsset.fetchAssets(in: selectedCollection, options: fetchOptions)
+        } else {
+            allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        }
+        
+        if allPhotos.count == 0 {
+            print("No photos found in the selected folder")
+            showNoPhotosAlert()
+        } else {
+            analyzeLibrary()
+        }
+    }
+    
     // MARK: - Photo Analysis Methods
     func analyzeLibrary() {
         guard !isProcessing else { return }
         isProcessing = true
-        
-        // Show overlay and progress elements
-        DispatchQueue.main.async {
+            DispatchQueue.main.async {
             self.overlay.isHidden = false
             self.progressView.isHidden = false
             self.progressLabel.isHidden = false
@@ -349,7 +363,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
             }
             
             // Perform K-means clustering
-            let clusters = self.kMeans.cluster(points: allPoints, into: 5) // You can adjust the number of clusters
+            let clusters = self.kMeans.cluster(points: allPoints, into: 5)
             self.dominantColors = clusters.sorted(by: { $0.points.count > $1.points.count }).map { $0.center.toUIColor() }
             
             DispatchQueue.main.async {
@@ -486,18 +500,57 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
             self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
         }
     }
+
+    private func changeSortingMethod(to method: SortingMethod) {
+        currentSortingMethod = method
+        updateColorSlider()
+        filterPhotosByColor(getSelectedColor())
+    }
     
     // MARK: - User Interaction Methods
-        @objc func colorSliderChanged() {
-            let selectedColor = getSelectedColor()
-            print("Selected color: \(selectedColor)")
-            
-            debounceTimer?.invalidate()
-            debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-                self?.filterPhotosByColor(selectedColor)
-            }
+    
+    @IBAction func sortingButtonTapped(_ sender: Any) {
+        let alert = UIAlertController(title: "Select Sorting Method", message: nil, preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "Sort by Color", style: .default) { [weak self] _ in
+            self?.changeSortingMethod(to: .color)
+        })
+        
+        alert.addAction(UIAlertAction(title: "Sort by Shade", style: .default) { [weak self] _ in
+            self?.changeSortingMethod(to: .shade)
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        if let popoverController = alert.popoverPresentationController {
+            popoverController.sourceView = sortingButton
+            popoverController.sourceRect = sortingButton.bounds
         }
         
+        present(alert, animated: true)
+    }
+    
+    @IBAction func folderButtonTapped(_ sender: Any) {
+        let alert = UIAlertController(title: "Select Folder", message: nil, preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "All Photos", style: .default) { [weak self] _ in
+            self?.selectAllPhotos()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Select Album", style: .default) { [weak self] _ in
+            self?.showAlbumPicker()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        if let popoverController = alert.popoverPresentationController {
+            popoverController.sourceView = folderButton
+            popoverController.sourceRect = folderButton.bounds
+        }
+        
+        present(alert, animated: true)
+    }
+    
     func getSelectedColor() -> UIColor {
         switch currentSortingMethod {
         case .color:
@@ -509,17 +562,52 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         }
     }
     
-    @objc func sortingButtonTapped() {
-        let newMethod: SortingMethod = currentSortingMethod == .color ? .shade : .color
-        changeSortingMethod(to: newMethod)
+    @objc func colorSliderChanged() {
+        let selectedColor = getSelectedColor()
+        print("Selected color: \(selectedColor)")
+        
+        debounceTimer?.invalidate()
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+            self?.filterPhotosByColor(selectedColor)
+            self?.scrollCollectionViewToTop()
+        }
     }
-
-    func changeSortingMethod(to method: SortingMethod) {
-        currentSortingMethod = method
-        let iconName = method == .color ? "circle.hexagonpath.fill" : "square.3.stack.3d.top.fill"
-        sortingButton.setImage(UIImage(systemName: iconName), for: .normal)
-        updateColorSlider()
-        filterPhotosByColor(getSelectedColor())
+    
+    private func scrollCollectionViewToTop() {
+        DispatchQueue.main.async {
+            if self.filteredPhotos.count > 0 {
+                let indexPath = IndexPath(item: 0, section: 0)
+                self.collectionView.scrollToItem(at: indexPath, at: .top, animated: true)
+            }
+        }
+    }
+    
+    func selectAllPhotos() {
+        selectedCollection = nil
+//        selectedFolderLabel.text = "All Photos"
+        fetchPhotos()
+    }
+    
+    func showAlbumPicker() {
+        let albumPicker = UIAlertController(title: "Select Album", message: nil, preferredStyle: .actionSheet)
+        
+        let userAlbums = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
+        userAlbums.enumerateObjects { (collection, _, _) in
+            albumPicker.addAction(UIAlertAction(title: collection.localizedTitle ?? "Untitled Album", style: .default) { [weak self] _ in
+                self?.selectedCollection = collection
+//                self?.selectedFolderLabel.text = collection.localizedTitle ?? "Untitled Album"
+                self?.fetchPhotos()
+            })
+        }
+        
+        albumPicker.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        if let popoverController = albumPicker.popoverPresentationController {
+            popoverController.sourceView = folderButton
+            popoverController.sourceRect = folderButton.bounds
+        }
+        
+        present(albumPicker, animated: true)
     }
     
     // MARK: - Data Management Methods
@@ -550,19 +638,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     
     // MARK: - Helper Methods
-    func fetchPhotos() {
-        let fetchOptions = PHFetchOptions()
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-        
-        if allPhotos.count == 0 {
-            print("No photos found in the library")
-            showNoPhotosAlert()
-        } else {
-            analyzeLibrary()
-        }
-    }
-    
+  
     func showAccessDeniedAlert() {
         let alert = UIAlertController(title: "Access Denied", message: "This app requires access to your photo library to function. Please grant access in Settings.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
@@ -595,14 +671,13 @@ extension ViewController {
         let assetInfo = filteredPhotos[indexPath.item]
         
         let manager = PHImageManager.default()
+        let targetSize = CGSize(width: collectionView.bounds.width / 3, height: collectionView.bounds.width / 3)
         manager.requestImage(for: assetInfo.asset,
-                             targetSize: CGSize(width: 100, height: 100),
+                             targetSize: targetSize,
                              contentMode: .aspectFill,
                              options: nil) { (image, _) in
             DispatchQueue.main.async {
                 cell.imageView.image = image
-                
-                // Optional display of the similarity score
                 cell.similarityLabel.text = String(format: "%.2f", assetInfo.similarity)
             }
         }
