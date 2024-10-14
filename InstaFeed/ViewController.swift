@@ -198,57 +198,57 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     // MARK: - Lifecycle Methods
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupUI()
         setupCollectionView()
         setupColorSlider()
         setupPhotoLibraryAccess()
         loadCachedResults()
     }
     
-    
     // MARK: - Setup Methods
     func setupUI() {
-        setupColorSlider()
-        setupCollectionView()
+        view.backgroundColor = .black
+        
+        // Safely add and configure UI elements
+        if let collectionView = collectionView {
+            // Configure collectionView
+        } else {
+            print("Warning: collectionView is nil")
+        }
+        
+        if let colorSlider = colorSlider {
+            colorSlider.minimumValue = 0.0
+            colorSlider.maximumValue = 1.0
+            colorSlider.value = 0.0
+            colorSlider.addTarget(self, action: #selector(colorSliderChanged), for: .valueChanged)
+        } else {
+            print("Warning: colorSlider is nil")
+        }
+        
+        if sortingButton == nil {
+            print("Warning: sortingButton is nil")
+        }
+        
+        if folderButton == nil {
+            print("Warning: folderButton is nil")
+        }
         
         view.addSubview(overlay)
         view.addSubview(progressView)
         view.addSubview(progressLabel)
-        view.addSubview(sortingButton)
-        view.addSubview(folderButton)
-        view.addSubview(colorSlider)
         
         NSLayoutConstraint.activate([
             overlay.topAnchor.constraint(equalTo: view.topAnchor),
             overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
+
             progressView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             progressView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             progressView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            
+
             progressLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 10),
-            progressLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            
-            sortingButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            sortingButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            sortingButton.widthAnchor.constraint(equalToConstant: 44),
-            sortingButton.heightAnchor.constraint(equalToConstant: 44),
-            
-            folderButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            folderButton.leadingAnchor.constraint(equalTo: sortingButton.trailingAnchor, constant: 20),
-            folderButton.widthAnchor.constraint(equalToConstant: 44),
-            folderButton.heightAnchor.constraint(equalToConstant: 44),
-            
-            colorSlider.topAnchor.constraint(equalTo: sortingButton.bottomAnchor, constant: 20),
-            colorSlider.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            colorSlider.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            colorSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            collectionView.topAnchor.constraint(equalTo: colorSlider.bottomAnchor, constant: 20),
-            collectionView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            progressLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
         
         // Initially hide the overlay and progress elements
@@ -258,6 +258,11 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     
     func setupCollectionView() {
+        guard let collectionView = collectionView else {
+            print("Error: collectionView is nil in setupCollectionView()")
+            return
+        }
+        
         collectionView.dataSource = self
         collectionView.delegate = self
         
@@ -277,7 +282,6 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         
         collectionView.collectionViewLayout = layout
         collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: "PhotoCell")
-
     }
     
     func setupColorSlider() {
@@ -326,7 +330,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     func analyzeLibrary() {
         guard !isProcessing else { return }
         isProcessing = true
-            DispatchQueue.main.async {
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             self.overlay.isHidden = false
             self.progressView.isHidden = false
             self.progressLabel.isHidden = false
@@ -496,6 +502,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         
         self.collectionView.reloadData()
         
+        self.scrollCollectionViewToTop()
+        
         if !self.filteredPhotos.isEmpty && self.collectionView.contentOffset.y == 0 {
             self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
         }
@@ -577,7 +585,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         DispatchQueue.main.async {
             if self.filteredPhotos.count > 0 {
                 let indexPath = IndexPath(item: 0, section: 0)
-                self.collectionView.scrollToItem(at: indexPath, at: .top, animated: true)
+                self.collectionView?.scrollToItem(at: indexPath, at: .top, animated: true)
             }
         }
     }
