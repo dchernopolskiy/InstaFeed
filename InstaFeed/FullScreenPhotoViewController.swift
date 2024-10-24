@@ -61,7 +61,13 @@ class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDe
 
     // MARK: - UIGestureRecognizerDelegate
     
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // Get the current SinglePhotoViewController
+        if let currentVC = viewControllers?.first as? SinglePhotoViewController,
+           let swipeGesture = gestureRecognizer as? UISwipeGestureRecognizer {
+            // Check if the current view is zoomed in
+            return currentVC.isZoomedOut
+        }
         return true
     }
 }
@@ -85,7 +91,8 @@ extension FullScreenPhotoViewController: UIPageViewControllerDataSource, UIPageV
     }
 }
 
-class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
+class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, UIScrollViewDelegate {
+    private let scrollView: UIScrollView
     private let imageView: UIImageView
     private let asset: PHAsset
     private let averageColor: UIColor
@@ -122,7 +129,12 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         return button
     }()
 
+    var isZoomedOut: Bool {
+        return scrollView.zoomScale <= scrollView.minimumZoomScale
+    }
+    
     init(asset: PHAsset, averageColor: UIColor) {
+        self.scrollView = UIScrollView()
         self.asset = asset
         self.averageColor = averageColor
         self.imageView = UIImageView()
@@ -136,6 +148,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupScrollView()
         setupImageView()
         setupCloseButton()
         setupShareButton()
@@ -148,21 +161,98 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         view.addGestureRecognizer(tapGesture)
 
+        // Only allow swipe gestures when not zoomed in
         let leftSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
         leftSwipe.direction = .left
+        leftSwipe.delegate = self
         view.addGestureRecognizer(leftSwipe)
 
         let rightSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
         rightSwipe.direction = .right
+        rightSwipe.delegate = self
         view.addGestureRecognizer(rightSwipe)
 
         let upSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleDismissSwipe(_:)))
         upSwipe.direction = .up
+        upSwipe.delegate = self
         view.addGestureRecognizer(upSwipe)
 
         let downSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handleDismissSwipe(_:)))
         downSwipe.direction = .down
+        downSwipe.delegate = self
         view.addGestureRecognizer(downSwipe)
+    }
+    
+    private func setupScrollView() {
+        view.addSubview(scrollView)
+        scrollView.delegate = self
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 4.0
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTapGesture)
+    }
+    
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if scrollView.zoomScale > scrollView.minimumZoomScale {
+            // If zoomed in, zoom out
+            scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+        } else {
+            // If zoomed out, zoom in to 2x at the tap point
+            let location = gesture.location(in: imageView)
+            let rect = CGRect(
+                x: location.x - (scrollView.bounds.size.width / 4),
+                y: location.y - (scrollView.bounds.size.height / 4),
+                width: scrollView.bounds.size.width / 2,
+                height: scrollView.bounds.size.height / 2
+            )
+            scrollView.zoom(to: rect, animated: true)
+        }
+    }
+    
+    // MARK: - UIScrollViewDelegate
+    
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        return imageView
+    }
+    
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        // Keep the image centered while zooming
+        let offsetX = max((scrollView.bounds.width - scrollView.contentSize.width) * 0.5, 0)
+        let offsetY = max((scrollView.bounds.height - scrollView.contentSize.height) * 0.5, 0)
+        
+        scrollView.contentInset = UIEdgeInsets(
+            top: offsetY,
+            left: offsetX,
+            bottom: offsetY,
+            right: offsetX
+        )
+    }
+    
+    
+    private func setupImageView() {
+        scrollView.addSubview(imageView)
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
+            imageView.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor)
+        ])
     }
 
     @objc private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
@@ -187,18 +277,6 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadImage()
-    }
-    
-    private func setupImageView() {
-        view.addSubview(imageView)
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: view.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
     }
     
     private func setupActivityIndicator() {
