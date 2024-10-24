@@ -4,10 +4,12 @@ import Photos
 class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDelegate {
     private var orderedAssets: [PHAsset]
     private var currentIndex: Int
+    private var assetColors: [String: UIColor]
 
-    init(orderedAssets: [PHAsset], initialIndex: Int) {
+    init(orderedAssets: [PHAsset], initialIndex: Int, assetColors: [String: UIColor]) {
         self.orderedAssets = orderedAssets
         self.currentIndex = initialIndex
+        self.assetColors = assetColors
         super.init(transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
     }
 
@@ -49,7 +51,9 @@ class FullScreenPhotoViewController: UIPageViewController, UIGestureRecognizerDe
 
     private func photoViewController(at index: Int) -> UIViewController? {
         guard index >= 0 && index < orderedAssets.count else { return nil }
-        let vc = SinglePhotoViewController(asset: orderedAssets[index])
+        let asset = orderedAssets[index]
+        let averageColor = assetColors[asset.localIdentifier] ?? .black
+        let vc = SinglePhotoViewController(asset: asset, averageColor: averageColor)
         vc.index = index
         vc.fullScreenParent = self
         return vc
@@ -84,6 +88,7 @@ extension FullScreenPhotoViewController: UIPageViewControllerDataSource, UIPageV
 class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
     private let imageView: UIImageView
     private let asset: PHAsset
+    private let averageColor: UIColor
     private let activityIndicator: UIActivityIndicatorView
     var index: Int = 0
     
@@ -117,8 +122,9 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         return button
     }()
 
-    init(asset: PHAsset) {
+    init(asset: PHAsset, averageColor: UIColor) {
         self.asset = asset
+        self.averageColor = averageColor
         self.imageView = UIImageView()
         self.activityIndicator = UIActivityIndicatorView(style: .large)
         super.init(nibName: nil, bundle: nil)
@@ -135,6 +141,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate {
         setupShareButton()
         setupActivityIndicator()
         setupGestureRecognizers()
+        view.backgroundColor = averageColor
     }
 
     private func setupGestureRecognizers() {

@@ -41,7 +41,7 @@
                                 </cells>
                             </collectionView>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="r9c-9k-8hn">
-                                <rect key="frame" x="23" y="781" width="44" height="44"/>
+                                <rect key="frame" x="8" y="781" width="44" height="44"/>
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="44" id="rLK-ki-YYv"/>
                                     <constraint firstAttribute="height" constant="44" id="zmq-Eh-mL1"/>
@@ -52,8 +52,16 @@
                                     <action selector="sortingButtonTapped:" destination="BYZ-38-t0r" eventType="touchUpInside" id="uDR-hv-rxp"/>
                                 </connections>
                             </button>
+                            <slider opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.5" minValue="0.0" maxValue="1" translatesAutoresizingMaskIntoConstraints="NO" id="qUr-6j-LGd">
+                                <rect key="frame" x="97" y="788" width="282" height="31"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="30" id="0m7-Xz-zba"/>
+                                    <constraint firstAttribute="height" relation="greaterThanOrEqual" constant="30" id="Ifh-xS-j68"/>
+                                    <constraint firstAttribute="width" constant="278" id="iAj-to-iK1"/>
+                                </constraints>
+                            </slider>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="Obj-hh-7cX">
-                                <rect key="frame" x="60" y="781" width="46" height="44"/>
+                                <rect key="frame" x="45" y="781" width="46" height="44"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="44" id="D2G-hb-CnH"/>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="44" id="YCa-3g-CVv"/>
@@ -64,26 +72,18 @@
                                     <action selector="folderButtonTapped:" destination="BYZ-38-t0r" eventType="touchUpInside" id="Sm4-Ng-Zvy"/>
                                 </connections>
                             </button>
-                            <slider opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.5" minValue="0.0" maxValue="1" translatesAutoresizingMaskIntoConstraints="NO" id="qUr-6j-LGd">
-                                <rect key="frame" x="112" y="788" width="267" height="31"/>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="30" id="0m7-Xz-zba"/>
-                                    <constraint firstAttribute="height" relation="greaterThanOrEqual" constant="30" id="Ifh-xS-j68"/>
-                                    <constraint firstAttribute="width" constant="263" id="iAj-to-iK1"/>
-                                </constraints>
-                            </slider>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="trailing" secondItem="8bC-Xf-vdC" secondAttribute="trailingMargin" id="3xC-Df-Exr"/>
-                            <constraint firstItem="r9c-9k-8hn" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="23" id="71a-8I-KJx"/>
+                            <constraint firstItem="r9c-9k-8hn" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="8" id="71a-8I-KJx"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="bottom" secondItem="6Tk-OE-BBY" secondAttribute="bottom" id="8LN-hu-utl"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="top" secondItem="3Ns-Ao-Cjv" secondAttribute="bottom" constant="38" id="B1k-l0-kZl"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="Obj-hh-7cX" secondAttribute="trailing" constant="8" symbolic="YES" id="Bgs-PV-89k"/>
                             <constraint firstItem="3Ns-Ao-Cjv" firstAttribute="leading" secondItem="8bC-Xf-vdC" secondAttribute="leading" id="D1r-wk-vqN"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="centerY" secondItem="r9c-9k-8hn" secondAttribute="centerY" id="SO5-mG-tnQ"/>
-                            <constraint firstItem="Obj-hh-7cX" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="60" id="nG1-Ef-ykL"/>
+                            <constraint firstItem="Obj-hh-7cX" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="45" id="nG1-Ef-ykL"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="r9c-9k-8hn" secondAttribute="trailing" constant="8" symbolic="YES" id="pkj-8e-LcM"/>
                             <constraint firstItem="qUr-6j-LGd" firstAttribute="centerY" secondItem="Obj-hh-7cX" secondAttribute="centerY" id="pyA-A6-K6K"/>
                             <constraint firstAttribute="trailing" secondItem="3Ns-Ao-Cjv" secondAttribute="trailing" id="wuG-TU-58y"/>

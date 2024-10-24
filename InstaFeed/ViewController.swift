@@ -195,6 +195,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     
     var selectedCollection: PHAssetCollection?
     
+    private let feedbackGenerator = UISelectionFeedbackGenerator()
+    
     // MARK: - Lifecycle Methods
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -203,6 +205,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         setupColorSlider()
         setupPhotoLibraryAccess()
         loadCachedResults()
+        feedbackGenerator.prepare()
     }
     
     // MARK: - Setup Methods
@@ -289,6 +292,17 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         colorSlider.maximumValue = 1.0
         colorSlider.value = 0.0
         colorSlider.addTarget(self, action: #selector(colorSliderChanged), for: .valueChanged)
+        colorSlider.addTarget(self, action: #selector(sliderTouchBegan), for: .touchDown)
+        colorSlider.addTarget(self, action: #selector(sliderTouchEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+    
+    @objc private func sliderTouchBegan() {
+        feedbackGenerator.prepare()
+    }
+    
+    @objc private func sliderTouchEnded() {
+        // Optional: You can prepare the generator again for the next use
+        feedbackGenerator.prepare()
     }
     
     func setupPhotoLibraryAccess() {
@@ -516,7 +530,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     
     // MARK: - User Interaction Methods
-    
+        
     @IBAction func sortingButtonTapped(_ sender: Any) {
         let alert = UIAlertController(title: "Select Sorting Method", message: nil, preferredStyle: .actionSheet)
         
@@ -573,6 +587,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     @objc func colorSliderChanged() {
         let selectedColor = getSelectedColor()
         print("Selected color: \(selectedColor)")
+        
+        feedbackGenerator.selectionChanged()
         
         debounceTimer?.invalidate()
         debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
@@ -695,7 +711,11 @@ extension ViewController {
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         let assets = filteredPhotos.map { $0.asset }
-        let fullScreenVC = FullScreenPhotoViewController(orderedAssets: assets, initialIndex: indexPath.item)
+        
+        // Create a dictionary of asset colors
+        let assetColors = Dictionary(uniqueKeysWithValues: allPhotoColors.map { ($0.asset.localIdentifier, $0.color) })
+
+        let fullScreenVC = FullScreenPhotoViewController(orderedAssets: assets, initialIndex: indexPath.item, assetColors: assetColors)
         fullScreenVC.modalPresentationStyle = .fullScreen
         present(fullScreenVC, animated: true, completion: nil)
     }
