@@ -406,13 +406,19 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
         let manager = PHImageManager.default()
         let option = PHImageRequestOptions()
         option.isSynchronous = true
-        option.deliveryMode = .fastFormat
-        option.resizeMode = .fast
+        option.deliveryMode = .highQualityFormat  // Changed from fastFormat
+        option.resizeMode = .exact  // Changed from fast
         option.isNetworkAccessAllowed = false
+        
+        // Increased size for better color sampling
+        let targetSize = CGSize(width: 120, height: 120)  // Increased from 50x50
         
         var averageColor: UIColor?
         
-        manager.requestImage(for: asset, targetSize: CGSize(width: 50, height: 50), contentMode: .aspectFit, options: option) { [weak self] image, info in
+        manager.requestImage(for: asset,
+                            targetSize: targetSize,
+                            contentMode: .aspectFit,
+                            options: option) { [weak self] image, info in
             if let error = info?[PHImageErrorKey] as? Error {
                 print("Image request failed with error: \(error)")
             }
@@ -586,14 +592,36 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     
     @objc func colorSliderChanged() {
         let selectedColor = getSelectedColor()
-        print("Selected color: \(selectedColor)")
         
         feedbackGenerator.selectionChanged()
         
+        // Cancel any existing preview timer
+        previewTimer?.invalidate()
+        
+        // Show preview immediately with low-quality images
+        showPreview(for: selectedColor)
+        
+        // Debounce the full-quality update
         debounceTimer?.invalidate()
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
             self?.filterPhotosByColor(selectedColor)
-            self?.scrollCollectionViewToTop()
+        }
+    }
+    
+    private var previewTimer: Timer?
+    
+    private func showPreview(for color: UIColor) {
+        guard !isProcessing else { return }
+        
+        let targetPoint = Point(from: color)
+        let quickFilteredPhotos = allPhotoColors.map { (asset: $0.asset, similarity: calculateSimilarity(targetPoint, Point(from: $0.color))) }
+            .sorted { $0.similarity < $1.similarity }
+            .prefix(Int(Double(allPhotoColors.count) * percentileThreshold))
+        
+        // Update UI with low-quality previews
+        DispatchQueue.main.async {
+            self.filteredPhotos = Array(quickFilteredPhotos)
+            self.collectionView.reloadData()
         }
     }
     
@@ -724,16 +752,51 @@ extension ViewController {
 // MARK: - ViewController Extension for Color Calculations
 extension ViewController {
     private func colorSimilarity(_ p1: Point, _ p2: Point) -> CGFloat {
-        // Convert RGB to Lab color space
-        let lab1 = rgbToLab(r: p1.x, g: p1.y, b: p1.z)
-        let lab2 = rgbToLab(r: p2.x, g: p2.y, b: p2.z)
+        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0
+        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0
         
-        // Calculate Delta E (CIE 2000)
-        return deltaE2000(lab1: lab1, lab2: lab2)
+        let color1 = UIColor(red: p1.x, green: p1.y, blue: p1.z, alpha: 1)
+        let color2 = UIColor(red: p2.x, green: p2.y, blue: p2.z, alpha: 1)
+        
+        guard color1.getHue(&h1, saturation: &s1, brightness: &b1, alpha: nil),
+              color2.getHue(&h2, saturation: &s2, brightness: &b2, alpha: nil) else {
+            return 1.0
+        }
+        
+        // Handle very dark images (nearly black)
+        if b1 < 0.1 || b2 < 0.1 {
+            return 1.0  // Exclude very dark images from color matching
+        }
+        
+        // Handle very low saturation (grayscale-ish) images
+        if s1 < 0.15 || s2 < 0.15 {
+            return 1.0  // Exclude very desaturated images from color matching
+        }
+        
+        // Calculate hue difference with stricter boundaries
+        var hueDiff = abs(h1 - h2)
+        if hueDiff > 0.5 {
+            hueDiff = 1.0 - hueDiff
+        }
+        
+        // Apply a threshold to hue difference
+        // This makes the color boundaries more distinct
+        if hueDiff > 0.15 {  // Reduced from typical 0.5 to be more strict
+            return 1.0
+        }
+        
+        // Calculate saturation and brightness differences
+        let saturationDiff = abs(s1 - s2)
+        let brightnessDiff = abs(b1 - b2)
+        
+        // Weight the components with higher emphasis on hue matching
+        let similarity = (hueDiff * 0.8) + (saturationDiff * 0.15) + (brightnessDiff * 0.05)
+        
+        return similarity
     }
 
     private func shadeSimilarity(_ p1: Point, _ p2: Point) -> CGFloat {
-        // Calculate perceived brightness using the formula: 0.299R + 0.587G + 0.114B
+        // For grayscale comparison, use perceived brightness
         let brightness1 = 0.299 * p1.x + 0.587 * p1.y + 0.114 * p1.z
         let brightness2 = 0.299 * p2.x + 0.587 * p2.y + 0.114 * p2.z
         return abs(brightness1 - brightness2)
