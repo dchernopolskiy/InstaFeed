@@ -127,6 +127,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         button.layer.shadowOpacity = 0.3
         button.layer.shadowRadius = 2
         return button
+        
     }()
 
     var isZoomedOut: Bool {
@@ -146,6 +147,15 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         fatalError("init(coder:) has not been implemented")
     }
     
+    private var fullResolutionImage: UIImage?
+    private let imageRequestOptions: PHImageRequestOptions = {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.isNetworkAccessAllowed = true
+        options.isSynchronous = false
+        return options
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupScrollView()
@@ -155,6 +165,8 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         setupActivityIndicator()
         setupGestureRecognizers()
         view.backgroundColor = averageColor
+        //loading the image so there's no delay when using share button
+        loadFullResolutionImage()
     }
 
     private func setupGestureRecognizers() {
@@ -312,30 +324,43 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         activityIndicator.startAnimating()
         
         let manager = PHImageManager.default()
-        let option = PHImageRequestOptions()
-        option.deliveryMode = .opportunistic
-        option.isNetworkAccessAllowed = true
-        option.progressHandler = { (progress, _, _, _) in
-            DispatchQueue.main.async {
-                print("Download progress: \(progress)")
-            }
-        }
         
         // Load a lower quality image quickly
-        manager.requestImage(for: asset, targetSize: CGSize(width: 300, height: 300), contentMode: .aspectFit, options: option) { [weak self] (image, _) in
+        manager.requestImage(
+            for: asset,
+            targetSize: CGSize(width: 300, height: 300),
+            contentMode: .aspectFit,
+            options: imageRequestOptions
+        ) { [weak self] (image, _) in
             DispatchQueue.main.async {
                 self?.imageView.image = image
             }
         }
+    }
+        
+    private func loadFullResolutionImage() {
+        let manager = PHImageManager.default()
         
         // Load the full quality image
-        manager.requestImage(for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: option) { [weak self] (image, info) in
+        manager.requestImage(
+            for: asset,
+            targetSize: PHImageManagerMaximumSize,
+            contentMode: .aspectFit,
+            options: imageRequestOptions
+        ) { [weak self] (image, info) in
             DispatchQueue.main.async {
                 self?.activityIndicator.stopAnimating()
                 if let image = image {
-                    UIView.transition(with: self?.imageView ?? UIImageView(), duration: 0.3, options: .transitionCrossDissolve, animations: {
-                        self?.imageView.image = image
-                    }, completion: nil)
+                    self?.fullResolutionImage = image
+                    UIView.transition(
+                        with: self?.imageView ?? UIImageView(),
+                        duration: 0.3,
+                        options: .transitionCrossDissolve,
+                        animations: {
+                            self?.imageView.image = image
+                        },
+                        completion: nil
+                    )
                 }
             }
         }
@@ -346,12 +371,45 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
     }
     
     @objc private func shareTapped() {
-        guard let image = imageView.image else {
-            showAlert(title: "Error", message: "No image available to share.")
+        // Show activity indicator while preparing to share
+        activityIndicator.startAnimating()
+        
+        // Use cached full resolution image if available
+        if let fullResImage = fullResolutionImage {
+            presentShareSheet(with: fullResImage)
             return
         }
         
-        let activityViewController = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        // Otherwise, request it again
+        let manager = PHImageManager.default()
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        options.isSynchronous = false
+        
+        manager.requestImage(
+            for: asset,
+            targetSize: PHImageManagerMaximumSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { [weak self] (image, _) in
+            DispatchQueue.main.async {
+                self?.activityIndicator.stopAnimating()
+                if let image = image {
+                    self?.fullResolutionImage = image
+                    self?.presentShareSheet(with: image)
+                } else {
+                    self?.showAlert(title: "Error", message: "No image available to share.")
+                }
+            }
+        }
+    }
+    
+    private func presentShareSheet(with image: UIImage) {
+        let activityViewController = UIActivityViewController(
+            activityItems: [image],
+            applicationActivities: nil
+        )
         
         // For iPad
         if let popoverController = activityViewController.popoverPresentationController {
@@ -359,19 +417,16 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
             popoverController.sourceRect = shareButton.bounds
         }
         
-        // Handle potential errors
-        activityViewController.completionWithItemsHandler = { (activityType, completed, returnedItems, error) in
+        activityViewController.completionWithItemsHandler = { [weak self] (activityType, completed, returnedItems, error) in
             if let error = error {
                 print("Sharing failed with error: \(error.localizedDescription)")
-                self.showAlert(title: "Sharing Failed", message: "There was an error while trying to share the image.")
-            } else if completed {
-                print("Sharing completed successfully.")
-            } else {
-                print("Sharing cancelled by user.")
+                self?.showAlert(title: "Sharing Failed", message: "There was an error while trying to share the image.")
             }
         }
         
-        present(activityViewController, animated: true, completion: nil)
+        present(activityViewController, animated: true) {
+            self.activityIndicator.stopAnimating()
+        }
     }
 
     private func showAlert(title: String, message: String) {
