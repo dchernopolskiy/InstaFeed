@@ -39,11 +39,24 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		374469182DCD7A78005EBE07 /* Exceptions for "InstaFeed" folder in "Copy Bundle Resources" phase from "InstaFeed" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 375696272CB8CB870026C836 /* Resources */;
+			membershipExceptions = (
+				"Utilities/Extensions/UIColor+Distance.swift",
+				"Utilities/Extensions/UIImage+Color.swift",
+				"Utilities/Extensions/UIView+Shadow.swift",
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3756962B2CB8CB870026C836 /* InstaFeed */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				375696512CB8CB8B0026C836 /* Exceptions for "InstaFeed" folder in "InstaFeed" target */,
+				374469182DCD7A78005EBE07 /* Exceptions for "InstaFeed" folder in "Copy Bundle Resources" phase from "InstaFeed" target */,
 			);
 			path = InstaFeed;
 			sourceTree = "<group>";

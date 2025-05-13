@@ -234,6 +234,24 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         }
     }
     
+    @objc func shareTapped() {
+        guard let image = imageView.image else { return }
+        
+        let activityViewController = UIActivityViewController(
+            activityItems: [image],
+            applicationActivities: nil
+        )
+        
+        // For iPad support
+        if let popoverController = activityViewController.popoverPresentationController {
+            popoverController.sourceView = view
+            popoverController.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
+        }
+        
+        present(activityViewController, animated: true)
+    }
+    
     // MARK: - UIScrollViewDelegate
     
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -337,9 +355,13 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
             }
         }
     }
+    
         
     private func loadFullResolutionImage() {
         let manager = PHImageManager.default()
+        
+        // Show the activity indicator
+        activityIndicator.startAnimating()
         
         // Load the full quality image
         manager.requestImage(
@@ -368,15 +390,76 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
     
     @objc private func closeTapped() {
         dismiss(animated: true, completion: nil)
+    
+    }
+
+
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+        present(alert, animated: true, completion: nil)
+    }
+}
+
+// MARK: - Photos App Integration
+extension SinglePhotoViewController {
+    
+    func openInPhotosApp() {
+        // Try URL scheme first
+        if let url = URL(string: "photos-redirect://"), UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            return
+        }
+        
+        // Otherwise use document interaction controller
+        exportAsTemporaryFile()
     }
     
-    @objc private func shareTapped() {
-        // Show activity indicator while preparing to share
+    private func exportAsTemporaryFile() {
+        activityIndicator.startAnimating()
+        
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        options.isSynchronous = false
+        
+        PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { [weak self] (data, _, _, _) in
+            guard let self = self, let imageData = data else {
+                DispatchQueue.main.async {
+                    self?.activityIndicator.stopAnimating()
+                    self?.showAlert(title: "Error", message: "Could not get image data")
+                }
+                return
+            }
+            
+            let temporaryFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(self.asset.localIdentifier).jpg")
+            
+            do {
+                try imageData.write(to: temporaryFileURL)
+                
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                    
+                    let docController = UIDocumentInteractionController(url: temporaryFileURL)
+                    docController.delegate = self
+                    docController.presentPreview(animated: true)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                    self.showAlert(title: "Error", message: "Error creating temporary file: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    @objc func enhancedShareTapped() {
+        // Show activity indicator
         activityIndicator.startAnimating()
         
         // Use cached full resolution image if available
         if let fullResImage = fullResolutionImage {
-            presentShareSheet(with: fullResImage)
+            presentEnhancedShareSheet(with: fullResImage)
             return
         }
         
@@ -397,7 +480,7 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
                 self?.activityIndicator.stopAnimating()
                 if let image = image {
                     self?.fullResolutionImage = image
-                    self?.presentShareSheet(with: image)
+                    self?.presentEnhancedShareSheet(with: image)
                 } else {
                     self?.showAlert(title: "Error", message: "No image available to share.")
                 }
@@ -405,10 +488,16 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
         }
     }
     
-    private func presentShareSheet(with image: UIImage) {
+    private func presentEnhancedShareSheet(with image: UIImage) {
+        // Create custom activity for "Open in Photos"
+        let openInPhotosActivity = OpenInPhotosActivity()
+        openInPhotosActivity.completionHandler = { [weak self] in
+            self?.openInPhotosApp()
+        }
+        
         let activityViewController = UIActivityViewController(
             activityItems: [image],
-            applicationActivities: nil
+            applicationActivities: [openInPhotosActivity]
         )
         
         // For iPad
@@ -417,21 +506,14 @@ class SinglePhotoViewController: UIViewController, UIGestureRecognizerDelegate, 
             popoverController.sourceRect = shareButton.bounds
         }
         
-        activityViewController.completionWithItemsHandler = { [weak self] (activityType, completed, returnedItems, error) in
-            if let error = error {
-                print("Sharing failed with error: \(error.localizedDescription)")
-                self?.showAlert(title: "Sharing Failed", message: "There was an error while trying to share the image.")
-            }
-        }
-        
         present(activityViewController, animated: true) {
             self.activityIndicator.stopAnimating()
         }
     }
+}
 
-    private func showAlert(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
-        present(alert, animated: true, completion: nil)
+extension SinglePhotoViewController: UIDocumentInteractionControllerDelegate {
+    func documentInteractionControllerViewControllerForPreview(_ controller: UIDocumentInteractionController) -> UIViewController {
+        return self
     }
 }
